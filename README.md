@@ -1,1 +1,1 @@
-# osint-threat
+# Ransomware OSINT Framework by GPD.
