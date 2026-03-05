@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ransomware OSINT Framework</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  #topbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 50px;
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 16px;
+    z-index: 200;
+    user-select: none;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 15px;
+    color: #fff;
+    white-space: nowrap;
+  }
+
+  .brand-icon {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, #1f6feb, #388bfd);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+
+  .sep { width: 1px; height: 24px; background: #30363d; }
+
+  .stats {
+    display: flex;
+    gap: 14px;
+    font-size: 12px;
+    color: #8b949e;
+    font-family: monospace;
+  }
+  .stats span { color: #58a6ff; font-weight: 600; }
+
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+    align-items: center;
+  }
+
+  .ctrl-btn {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .ctrl-btn:hover { background: #30363d; border-color: #58a6ff; color: #fff; }
+
+  #tree-container {
+    position: absolute;
+    top: 50px; left: 0; right: 0; bottom: 0;
+    overflow: hidden;
+    cursor: grab;
+  }
+  #tree-container:active { cursor: grabbing; }
+
+  /* Tooltip */
+  #tooltip {
+    position: fixed;
+    background: #1c2128;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    max-width: 300px;
+    pointer-events: none;
+    z-index: 500;
+    display: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    line-height: 1.5;
+  }
+  .tt-name { font-weight: 700; color: #fff; font-size: 13px; margin-bottom: 3px; }
+  .tt-url  { color: #58a6ff; font-family: monospace; font-size: 11px; margin-bottom: 5px; }
+  .tt-desc { color: #8b949e; }
+  .tt-hint { margin-top: 6px; color: #3fb950; font-size: 10px; font-style: italic; }
+
+  /* Legend */
+  #legend {
+    position: fixed;
+    bottom: 16px; left: 16px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 14px 16px;
+    z-index: 200;
+    min-width: 210px;
+  }
+  #legend h3 {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #8b949e;
+    margin-bottom: 10px;
+  }
+  .leg-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 5px; cursor: pointer;
+    border-radius: 5px; padding: 3px 5px;
+    transition: background 0.15s;
+  }
+  .leg-row:hover { background: #21262d; }
+  .leg-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+  .leg-label { font-size: 12px; color: #c9d1d9; }
+  .leg-divider { border-top: 1px solid #30363d; margin: 8px 0; }
+  .leg-shape-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .leg-shape-label { font-size: 11px; color: #8b949e; }
+
+  /* Instructions */
+  #instructions {
+    position: fixed;
+    bottom: 16px; right: 16px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 11px;
+    color: #8b949e;
+    z-index: 200;
+    line-height: 2;
+  }
+  .key {
+    background: #21262d; border: 1px solid #30363d;
+    border-radius: 4px; padding: 1px 6px;
+    font-family: monospace; color: #c9d1d9; font-size: 10px;
+  }
+
+  .node { cursor: pointer; }
+  .link { fill: none; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="brand">
+    <div class="brand-icon">🎯</div>
+    Ransomware OSINT Framework
+  </div>
+  <div class="sep"></div>
+  <div class="stats">
+    <div>Fases: <span>5</span></div>
+    <div>Actividades: <span>16</span></div>
+    <div>Herramientas: <span>127</span></div>
+  </div>
+  <div class="controls">
+    <button class="ctrl-btn" onclick="expandAll()">Expandir todo</button>
+    <button class="ctrl-btn" onclick="collapseAll()">Colapsar todo</button>
+    <button class="ctrl-btn" onclick="resetView()">Centrar</button>
+  </div>
+</div>
+
+<div id="tree-container">
+  <svg id="svg"><g id="g"></g></svg>
+</div>
+
+<div id="legend">
+  <h3>Fases de la Metodología</h3>
+  <div class="leg-row" onclick="focusPhase(0)"><div class="leg-dot" style="background:#1f6feb"></div><div class="leg-label">Fase 1 · Planeación</div></div>
+  <div class="leg-row" onclick="focusPhase(1)"><div class="leg-dot" style="background:#a371f7"></div><div class="leg-label">Fase 2 · Recolección</div></div>
+  <div class="leg-row" onclick="focusPhase(2)"><div class="leg-dot" style="background:#3fb950"></div><div class="leg-label">Fase 3 · Procesamiento</div></div>
+  <div class="leg-row" onclick="focusPhase(3)"><div class="leg-dot" style="background:#f0883e"></div><div class="leg-label">Fase 4 · Análisis y Producción</div></div>
+  <div class="leg-row" onclick="focusPhase(4)"><div class="leg-dot" style="background:#f85149"></div><div class="leg-label">Fase 5 · Difusión</div></div>
+  <div class="leg-divider"></div>
+  <div class="leg-shape-row">
+    <svg width="14" height="14"><polygon points="7,1 13,13 1,13" fill="#58a6ff"/></svg>
+    <div class="leg-shape-label">Herramienta — clic abre URL</div>
+  </div>
+  <div class="leg-shape-row">
+    <svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#0d1117" stroke="#58a6ff" stroke-width="1.5"/></svg>
+    <div class="leg-shape-label">Nodo — clic expande / colapsa</div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="instructions">
+  <div><span class="key">Clic</span> nodo → expandir / colapsar</div>
+  <div><span class="key">Clic</span> triángulo → abrir URL</div>
+  <div><span class="key">Scroll</span> → zoom &nbsp; <span class="key">Arrastrar</span> → mover</div>
+  <div><span class="key">Clic leyenda</span> → filtrar por fase</div>
+</div>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────────────────────────
+const DATA = {"name":"Ransomware OSINT","type":"root","children":[{"name":"Fase 1","label":"Planeación","type":"fase","children":[{"name":"Anonimización y Laboratorio","type":"actividad","children":[{"name":"ProtonVPN","url":"protonvpn.com","desc":"VPN de alta privacidad, no registra tráfico, útil para anonimizar investigación.","type":"tool"},{"name":"Mullvad VPN","url":"mullvad.net","desc":"VPN sin cuentas de usuario, acepta pagos anónimos. Ideal para OSINT.","type":"tool"},{"name":"Tor Browser","url":"torproject.org","desc":"Acceso anónimo a internet y a sitios .onion (dark web) de grupos de ransomware.","type":"tool"},{"name":"Tails OS","url":"tails.boum.org","desc":"Sistema operativo live centrado en anonimato. No deja rastros en el equipo.","type":"tool"},{"name":"Whonix","url":"whonix.org","desc":"VM que enruta todo el tráfico por Tor. Ideal para laboratorio de análisis.","type":"tool"},{"name":"REMnux","url":"remnux.org","desc":"Distribución Linux especializada para análisis de malware. Preinstalada con herramientas.","type":"tool"},{"name":"FLARE-VM","url":"github.com/mandiant/flare-vm","desc":"Entorno Windows para análisis de malware. Basado en Chocolatey.","type":"tool"},{"name":"VirtualBox","url":"virtualbox.org","desc":"Hipervisor gratuito para crear máquinas virtuales de análisis.","type":"tool"},{"name":"VMware Workstation","url":"vmware.com","desc":"Hipervisor profesional, snapshots y redes virtuales avanzadas.","type":"tool"}]},{"name":"Creación de avatars","type":"actividad","children":[{"name":"ProtonMail","url":"proton.me","desc":"Correo electrónico cifrado. Sin logs. Para crear avatars e infiltración en foros.","type":"tool"},{"name":"Tutanota","url":"tutanota.com","desc":"Correo electrónico cifrado de extremo a extremo. Alternativa a ProtonMail.","type":"tool"},{"name":"SimpleLogin","url":"simplelogin.io","desc":"Servicio de alias de correo. Protege identidad real al registrarse en foros.","type":"tool"},{"name":"Guerrilla Mail","url":"guerrillamail.com","desc":"Correos temporales y desechables para registros únicos.","type":"tool"},{"name":"Session","url":"getsession.org","desc":"Mensajería cifrada sin número de teléfono. Para infiltración en grupos.","type":"tool"},{"name":"Telegram","url":"telegram.org","desc":"Plataforma usada por grupos de ransomware para comunicaciones y filtraciones.","type":"tool"},{"name":"Privacy.com","url":"privacy.com","desc":"Tarjetas de pago virtuales para registros anónimos que requieren datos de pago.","type":"tool"}]},{"name":"Feeds de inteligencia","type":"actividad","children":[{"name":"Ransomware.live","url":"ransomware.live","desc":"Monitor en tiempo real de víctimas de ransomware. Datos de múltiples grupos.","type":"tool"},{"name":"RansomLook","url":"ransomlook.io","desc":"Tracker de grupos de ransomware y sus sitios de filtraciones (.onion y clearweb).","type":"tool"},{"name":"Ransomwatch","url":"ransomwatch.telemetry.ltd","desc":"Monitoreo automatizado de sitios .onion de grupos de ransomware.","type":"tool"},{"name":"ID Ransomware","url":"id-ransomware.malwarehunterteam.com","desc":"Identifica variantes de ransomware por nota de rescate o archivo cifrado.","type":"tool"},{"name":"The DFIR Report","url":"thedfirreport.com","desc":"Reportes detallados de intrusiones reales. Incluye TTPs y IOCs completos.","type":"tool"},{"name":"VX-Underground","url":"vx-underground.org","desc":"Repositorio de muestras de malware, papers y noticias del underground.","type":"tool"},{"name":"Bleeping Computer","url":"bleepingcomputer.com","desc":"Noticias de ciberseguridad y ransomware. Tracking de nuevas variantes.","type":"tool"},{"name":"DataBreaches.net","url":"databreaches.net","desc":"Seguimiento de filtraciones de datos. Útil para identificar víctimas.","type":"tool"},{"name":"SOCRadar Ransomware","url":"socradar.io/ransomware-intelligence","desc":"Inteligencia sobre actividad de grupos de ransomware.","type":"tool"},{"name":"Darkfeed.io","url":"darkfeed.io","desc":"Inteligencia de dark web sobre actores y campañas de ransomware.","type":"tool"}]}]},{"name":"Fase 2","label":"Recolección","type":"fase","children":[{"name":"Información Adversario","type":"actividad","children":[{"name":"MITRE ATT&CK Groups","url":"attack.mitre.org/groups","desc":"Base de datos de grupos de amenazas con TTPs, software y campañas asociadas.","type":"tool"},{"name":"Malpedia","url":"malpedia.caad.fkie.fraunhofer.de","desc":"Repositorio de familias de malware y actores. Relaciones entre grupos y variantes.","type":"tool"},{"name":"AlienVault OTX","url":"otx.alienvault.com","desc":"Plataforma colaborativa de inteligencia de amenazas. Perfiles de actores y pulsos.","type":"tool"},{"name":"Mandiant Threat Intel","url":"mandiant.com/resources/insights/reports","desc":"Reportes públicos de inteligencia sobre APTs y grupos de ransomware.","type":"tool"},{"name":"Cisco Talos Intel","url":"talosintelligence.com","desc":"Inteligencia de amenazas de Cisco Talos. Perfiles de actores y campañas.","type":"tool"},{"name":"Group-IB Blog","url":"group-ib.com/resources/threat-research","desc":"Investigaciones profundas sobre grupos cibercriminales y de ransomware.","type":"tool"},{"name":"Recorded Future","url":"recordedfuture.com/resources","desc":"Reportes públicos e inteligencia estratégica sobre actores de amenazas.","type":"tool"},{"name":"Crowdstrike Blog","url":"crowdstrike.com/blog","desc":"Reportes sobre adversarios con nomenclatura propia (Bears, Spiders, Kittens).","type":"tool"},{"name":"Sekoia.io Blog","url":"blog.sekoia.io","desc":"Investigaciones técnicas sobre actores de ransomware y malware.","type":"tool"},{"name":"CISA Known Exploited","url":"cisa.gov/known-exploited-vulnerabilities-catalog","desc":"Catálogo de vulnerabilidades explotadas activamente por actores de amenazas.","type":"tool"}]},{"name":"Actividades / Detecciones","type":"actividad","children":[{"name":"VirusTotal","url":"virustotal.com","desc":"Análisis de archivos, hashes, URLs y dominios. Correlación entre IOCs.","type":"tool"},{"name":"MalwareBazaar","url":"bazaar.abuse.ch","desc":"Base de datos de muestras de malware con tags, hashes y contexto.","type":"tool"},{"name":"URLhaus","url":"urlhaus.abuse.ch","desc":"Base de datos de URLs usadas para distribuir malware. Actualizaciones en tiempo real.","type":"tool"},{"name":"ThreatFox","url":"threatfox.abuse.ch","desc":"IOCs de malware (IPs, dominios, URLs, hashes). Compartidos por la comunidad.","type":"tool"},{"name":"Any.run","url":"app.any.run","desc":"Sandbox interactivo. Análisis de comportamiento de malware en tiempo real.","type":"tool"},{"name":"Hybrid Analysis","url":"hybrid-analysis.com","desc":"Sandbox automatizado. Reportes detallados de comportamiento de malware.","type":"tool"},{"name":"Triage (Hatching)","url":"tria.ge","desc":"Sandbox especializado en análisis de malware. Alta velocidad de procesamiento.","type":"tool"},{"name":"Joe Sandbox","url":"joesandbox.com","desc":"Análisis profundo de comportamiento con análisis de memoria incluido.","type":"tool"},{"name":"ID Ransomware","url":"id-ransomware.malwarehunterteam.com","desc":"Identificación de variantes de ransomware por nota de rescate o extensión.","type":"tool"},{"name":"Ransomware.live","url":"ransomware.live","desc":"Registro histórico de víctimas por grupo, sector y país.","type":"tool"}]},{"name":"Información Capacidades","type":"actividad","children":[{"name":"MITRE ATT&CK","url":"attack.mitre.org","desc":"Framework de TTPs. Mapeo de técnicas y tácticas usadas por actores de ransomware.","type":"tool"},{"name":"MITRE ATT&CK Navigator","url":"mitre-attack.github.io/attack-navigator","desc":"Herramienta de visualización de TTPs sobre la matriz ATT&CK.","type":"tool"},{"name":"Sigma Rules (GitHub)","url":"github.com/SigmaHQ/sigma","desc":"Repositorio de reglas de detección para SIEM basadas en TTPs conocidos.","type":"tool"},{"name":"YARA Rules (GitHub)","url":"github.com/Yara-Rules/rules","desc":"Repositorio de reglas YARA para detección de familias de malware.","type":"tool"},{"name":"Valhalla YARA","url":"valhalla.nextron-systems.com","desc":"Motor de búsqueda de reglas YARA de calidad para familias de malware.","type":"tool"},{"name":"InQuest Labs","url":"labs.inquest.net","desc":"Análisis de archivos sospechosos y búsqueda de artefactos maliciosos.","type":"tool"},{"name":"Malware Traffic Analysis","url":"malware-traffic-analysis.net","desc":"Análisis de tráfico de red asociado a infecciones de malware y ransomware.","type":"tool"}]},{"name":"Información Infraestructura","type":"actividad","children":[{"name":"Shodan","url":"shodan.io","desc":"Motor de búsqueda de dispositivos conectados. Identifica C2s y servidores maliciosos.","type":"tool"},{"name":"Censys","url":"censys.io","desc":"Escaneo de internet. Búsqueda por certificados, banners y configuraciones.","type":"tool"},{"name":"FOFA","url":"fofa.info","desc":"Motor de búsqueda de activos de internet de origen chino. Amplia cobertura.","type":"tool"},{"name":"Onyphe","url":"onyphe.io","desc":"Motor de búsqueda de ciber defensa. Datos de escaneo y fuentes pasivas.","type":"tool"},{"name":"BinaryEdge","url":"binaryedge.io","desc":"Escaneo continuo de internet. API para búsqueda de infraestructura maliciosa.","type":"tool"},{"name":"GreyNoise","url":"greynoise.io","desc":"Clasificación de IPs. Distingue entre ruido de internet y amenazas reales.","type":"tool"},{"name":"ZoomEye","url":"zoomeye.org","desc":"Motor de búsqueda de activos de internet. Alternativa a Shodan.","type":"tool"},{"name":"SecurityTrails","url":"securitytrails.com","desc":"Historial de DNS y WHOIS. Pivoting entre dominios e IPs relacionados.","type":"tool"},{"name":"DomainTools","url":"domaintools.com","desc":"Historial de registro de dominios, reverse WHOIS y pivoting de infraestructura.","type":"tool"},{"name":"who.is","url":"who.is","desc":"Búsqueda de WHOIS. Consulta rápida de registros de dominios.","type":"tool"},{"name":"RiskIQ / MDTI","url":"ti.defender.microsoft.com","desc":"Microsoft Defender TI. DNS pasivo, WHOIS histórico y análisis de actores.","type":"tool"},{"name":"RIPE NCC","url":"ripe.net","desc":"Registro de internet europeo. Información de ASNs, rangos IP y organizaciones.","type":"tool"},{"name":"LACNIC","url":"lacnic.net","desc":"Registro de internet de Latinoamérica y el Caribe. ASNs y rangos IP.","type":"tool"},{"name":"HE BGP Toolkit","url":"bgp.he.net","desc":"Herramienta de Hurricane Electric para consultas de BGP, ASNs y prefijos.","type":"tool"},{"name":"CIRCL Passive DNS","url":"www.circl.lu/services/passive-dns/","desc":"Base de datos histórica de registros DNS.","type":"tool"},{"name":"URLScan.io","url":"urlscan.io","desc":"Escaneo y análisis de URLs. Capturas de pantalla, recursos cargados y más.","type":"tool"},{"name":"AbuseIPDB","url":"abuseipdb.com","desc":"Base de datos colaborativa de IPs maliciosas. Reportes de la comunidad.","type":"tool"},{"name":"IPInfo","url":"ipinfo.io","desc":"Geolocalización, ASN y datos de enriquecimiento para direcciones IP.","type":"tool"},{"name":"Pulsedive","url":"pulsedive.com","desc":"Inteligencia de amenazas. Análisis de IPs, URLs y dominios con contexto.","type":"tool"},{"name":"Cisco Talos IP Rep.","url":"talosintelligence.com/reputation_center","desc":"Reputación de IPs y dominios de Cisco Talos.","type":"tool"},{"name":"VirusTotal","url":"virustotal.com","desc":"Verificación de reputación de IPs, dominios y URLs contra múltiples motores.","type":"tool"},{"name":"crt.sh","url":"crt.sh","desc":"Logs de transparencia de certificados. Descubre subdominios y dominios relacionados.","type":"tool"},{"name":"JARM Fingerprint","url":"github.com/salesforce/jarm","desc":"Fingerprinting activo de servidores TLS para identificar C2s de ransomware.","type":"tool"}]}]},{"name":"Fase 3","label":"Procesamiento","type":"fase","children":[{"name":"Plataformas de CTI","type":"actividad","children":[{"name":"MISP","url":"misp-project.org","desc":"Plataforma de intercambio de inteligencia de amenazas. Consolidación de IOCs y eventos.","type":"tool"},{"name":"OpenCTI","url":"opencti.io","desc":"Plataforma open source de Cyber Threat Intelligence. Visualización de relaciones STIX.","type":"tool"},{"name":"TheHive","url":"thehive-project.org","desc":"Plataforma de respuesta a incidentes. Gestión de casos y correlación con MISP.","type":"tool"},{"name":"Cortex","url":"github.com/TheHive-Project/Cortex","desc":"Motor de análisis y enriquecimiento. Se integra con TheHive y MISP.","type":"tool"},{"name":"IntelOwl","url":"github.com/intelowlproject/IntelOwl","desc":"Agregador OSINT de código abierto. Centraliza consultas a múltiples fuentes.","type":"tool"},{"name":"Maltego","url":"maltego.com","desc":"Plataforma de análisis de relaciones. Visualización de grafos de entidades.","type":"tool"}]},{"name":"Procesamiento de datos","type":"actividad","children":[{"name":"CyberChef","url":"gchq.github.io/CyberChef","desc":"Herramienta web para decodificar, descifrar y transformar datos. Imprescindible en OSINT.","type":"tool"},{"name":"Timesketch","url":"github.com/google/timesketch","desc":"Análisis de líneas de tiempo forenses. Correlación temporal de eventos.","type":"tool"},{"name":"Pandas / Python","url":"pandas.pydata.org","desc":"Para limpieza, normalización y análisis de datos estructurados (CSV, JSON).","type":"tool"},{"name":"jq","url":"stedolan.github.io/jq","desc":"Procesamiento de datos JSON en línea de comandos.","type":"tool"}]},{"name":"Estándares y Clasificación","type":"actividad","children":[{"name":"TLP (FIRST)","url":"first.org/tlp","desc":"Traffic Light Protocol. Estándar para clasificar con quién se puede compartir info.","type":"tool"},{"name":"Admiralty Code","url":"sans.org/white-papers/enhance-cti-admiralty","desc":"Sistema de clasificación de confiabilidad y fiabilidad de fuentes e información.","type":"tool"},{"name":"STIX 2.1","url":"oasis-open.github.io/cti-documentation","desc":"Lenguaje estándar de representación de inteligencia de amenazas.","type":"tool"},{"name":"TAXII 2.1","url":"oasis-open.github.io/cti-documentation","desc":"Protocolo de transporte de inteligencia en formato STIX.","type":"tool"},{"name":"MISP Taxonomies","url":"github.com/MISP/misp-taxonomies","desc":"Taxonomías estandarizadas para clasificación de eventos en MISP.","type":"tool"}]}]},{"name":"Fase 4","label":"Análisis y Producción","type":"fase","children":[{"name":"Análisis de TTPs","type":"actividad","children":[{"name":"MITRE ATT&CK","url":"attack.mitre.org","desc":"Mapeo de TTPs por grupo de ransomware. Cobertura de técnicas y sub-técnicas.","type":"tool"},{"name":"ATT&CK Navigator","url":"mitre-attack.github.io/attack-navigator","desc":"Visualización y comparación de TTPs. Creación de capas por actor/campaña.","type":"tool"},{"name":"MITRE D3FEND","url":"d3fend.mitre.org","desc":"Contramedidas defensivas mapeadas a técnicas ATT&CK de adversarios.","type":"tool"},{"name":"Maltego","url":"maltego.com","desc":"Análisis gráfico de relaciones entre actores, dominios, IPs y organizaciones.","type":"tool"},{"name":"Gephi","url":"gephi.org","desc":"Visualización y análisis de redes complejas. Útil para graficar relaciones de actores.","type":"tool"},{"name":"Cytoscape","url":"cytoscape.org","desc":"Análisis y visualización de redes. Representación de infraestructura maliciosa.","type":"tool"}]},{"name":"Reglas de detección","type":"actividad","children":[{"name":"YARA","url":"virustotal.github.io/yara","desc":"Creación de reglas para identificar familias de malware. Estándar en análisis.","type":"tool"},{"name":"YARA-X","url":"virustotal.github.io/yara-x","desc":"Nueva generación de YARA. Compatible y mejorado.","type":"tool"},{"name":"Sigma","url":"github.com/SigmaHQ/sigma","desc":"Reglas genéricas de detección para SIEM. Transpilables a múltiples plataformas.","type":"tool"},{"name":"Snort","url":"snort.org","desc":"Sistema de detección de intrusiones basado en red. Reglas para tráfico malicioso.","type":"tool"},{"name":"Suricata","url":"suricata.io","desc":"IDS/IPS de alta performance. Compatible con reglas Snort y Sigma.","type":"tool"},{"name":"Sigma2Splunk","url":"github.com/socprime/Sigma-Rules-Editor","desc":"Herramientas para convertir reglas Sigma a formato SIEM específico.","type":"tool"},{"name":"Valhalla YARA API","url":"valhalla.nextron-systems.com","desc":"Búsqueda de reglas YARA para familias de malware conocidas.","type":"tool"}]},{"name":"Formatos Inteligencia","type":"actividad","children":[{"name":"STIX 2.1","url":"docs.oasis-open.org/cti/stix/v2.1","desc":"Formato estándar para representar objetos de CTI (actores, malware, IOCs).","type":"tool"},{"name":"VERIS","url":"veriscommunity.net","desc":"Framework para describir incidentes de seguridad. Usado en DBIR de Verizon.","type":"tool"},{"name":"MISP","url":"misp-project.org","desc":"Exportación de datos en múltiples formatos: STIX, OpenIOC, CSV, JSON.","type":"tool"},{"name":"OpenCTI","url":"opencti.io","desc":"Produce reportes en STIX 2.1. Visualización de cadenas de ataque completas.","type":"tool"},{"name":"Cuckoo Sandbox","url":"cuckoosandbox.org","desc":"Reportes automatizados de análisis dinámico de malware.","type":"tool"}]}]},{"name":"Fase 5","label":"Difusión","type":"fase","children":[{"name":"Plataformas CTI","type":"actividad","children":[{"name":"MISP","url":"misp-project.org","desc":"Compartir eventos e IOCs con otras organizaciones. Federación de instancias.","type":"tool"},{"name":"OpenCTI","url":"opencti.io","desc":"Difusión de inteligencia estructurada STIX/TAXII a consumidores.","type":"tool"},{"name":"TAXII Servers","url":"oasis-open.github.io/cti-documentation","desc":"Protocolo de distribución automatizada de inteligencia en formato STIX.","type":"tool"},{"name":"Anomali ThreatStream","url":"anomali.com","desc":"Plataforma comercial de gestión y difusión de inteligencia de amenazas.","type":"tool"},{"name":"IBM X-Force Exchange","url":"exchange.xforce.ibmcloud.com","desc":"Plataforma colaborativa de inteligencia de amenazas.","type":"tool"}]},{"name":"Comunidades","type":"actividad","children":[{"name":"FS-ISAC","url":"fsisac.com","desc":"Centro de intercambio de inteligencia del sector financiero.","type":"tool"},{"name":"H-ISAC","url":"h-isac.org","desc":"Centro de intercambio del sector salud y farmacéutico.","type":"tool"},{"name":"MS-ISAC","url":"cisecurity.org/ms-isac","desc":"Información Sharing and Analysis Center para sector gubernamental estatal/local.","type":"tool"},{"name":"E-ISAC","url":"eisac.com","desc":"Intercambio de inteligencia para el sector energético.","type":"tool"},{"name":"Auto-ISAC","url":"automotiveisac.com","desc":"Centro de inteligencia para la industria automotriz.","type":"tool"},{"name":"FIRST","url":"www.first.org","desc":"Foro global de respuesta a incidentes y equipos de seguridad.","type":"tool"}]},{"name":"Organismos de Reporte","type":"actividad","children":[{"name":"CISA (US)","url":"cisa.gov/report","desc":"Agencia de Ciberseguridad de EE.UU. Reporte de incidentes y difusión de alertas.","type":"tool"},{"name":"NCSC (UK)","url":"ncsc.gov.uk","desc":"Centro Nacional de Ciberseguridad del Reino Unido. Alertas y advisories.","type":"tool"},{"name":"InfraGard","url":"infragard.org","desc":"Alianza FBI-sector privado para compartir inteligencia de infraestructura crítica.","type":"tool"},{"name":"Europol EC3","url":"europol.europa.eu/ec3","desc":"Centro Europeo de Ciberdelincuencia. Coordinación y reporte internacional.","type":"tool"},{"name":"No More Ransom","url":"nomoreransom.org","desc":"Iniciativa Europol/Interpol. Compartir info y acceder a descifradores.","type":"tool"},{"name":"IC3 (FBI)","url":"ic3.gov","desc":"Centro de denuncias de delitos en internet del FBI.","type":"tool"}]}]}]};
+
+// ── CONSTANTS ─────────────────────────────────────────────────────────────────
+const PHASE_COLORS = ['#1f6feb','#a371f7','#3fb950','#f0883e','#f85149'];
+const PHASE_BG     = ['#0d1f3c','#1e0f35','#0c2618','#3a1a00','#3a0a09'];
+const NODE_W = 200, NODE_H = 20, TOOL_H = 18;
+const DURATION = 400;
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let svgEl, gEl, zoomBeh;
+let root, focusedPhase = null;
+let nodeId = 0;
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function phaseIdx(d) {
+  let n = d;
+  while (n.parent) {
+    if (n.parent.data.type === 'root') return n.parent.children ? n.parent.children.indexOf(n) : n.parent._children.indexOf(n);
+    n = n.parent;
+  }
+  return -1;
+}
+
+function phaseColor(d) {
+  if (d.data.type === 'root') return '#58a6ff';
+  const i = phaseIdx(d);
+  return PHASE_COLORS[i] ?? '#58a6ff';
+}
+
+function isVisible(d) {
+  if (focusedPhase === null) return true;
+  if (d.data.type === 'root') return true;
+  return phaseIdx(d) === focusedPhase;
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+function init() {
+  const W = window.innerWidth, H = window.innerHeight - 50;
+
+  svgEl = d3.select('#svg').attr('width', W).attr('height', H);
+  svgEl.selectAll('*').remove();
+
+  const defs = svgEl.append('defs');
+  PHASE_COLORS.forEach((c, i) => {
+    const f = defs.append('filter').attr('id', `glow${i}`).attr('x','-50%').attr('y','-50%').attr('width','200%').attr('height','200%');
+    f.append('feGaussianBlur').attr('in','SourceGraphic').attr('stdDeviation','2.5').attr('result','blur');
+    const m = f.append('feMerge');
+    m.append('feMergeNode').attr('in','blur');
+    m.append('feMergeNode').attr('in','SourceGraphic');
+  });
+
+  gEl = svgEl.append('g').attr('id','g');
+
+  zoomBeh = d3.zoom().scaleExtent([0.1, 3]).on('zoom', e => gEl.attr('transform', e.transform));
+  svgEl.call(zoomBeh).on('dblclick.zoom', null);
+
+  // Build hierarchy, all collapsed initially
+  root = d3.hierarchy(DATA);
+  root.x0 = H / 2;
+  root.y0 = 0;
+  root.each(d => { d.id = ++nodeId; });
+
+  // Collapse everything below fase level
+  root.children.forEach(fase => {
+    fase.children.forEach(act => collapse(act));
+  });
+
+  update(root);
+  centerView();
+}
+
+function collapse(d) {
+  if (d.children) {
+    d._children = d.children;
+    d.children = null;
+    d._children.forEach(collapse);
+  }
+}
+
+function expand(d) {
+  if (d._children) {
+    d.children = d._children;
+    d._children = null;
+  }
+}
+
+// ── UPDATE (core render — fixes the branch bug via proper exit) ────────────────
+function update(source) {
+  // Compute tree layout dynamically based on visible nodes
+  const W = window.innerWidth;
+
+  // Build a custom vertical spacing tree
+  const treeData = d3.tree().nodeSize([TOOL_H + 4, NODE_W + 80])(root);
+
+  const nodes = root.descendants().filter(d => {
+    // Only show nodes that belong to focused phase (or all if no focus)
+    if (focusedPhase === null) return true;
+    if (d.data.type === 'root') return true;
+    return phaseIdx(d) === focusedPhase;
+  });
+
+  const links = root.links().filter(l => {
+    if (focusedPhase === null) return true;
+    if (l.source.data.type === 'root') return true;
+    return phaseIdx(l.target) === focusedPhase;
+  });
+
+  // ── LINKS ──────────────────────────────────────────────────────────────────
+  const linkPath = d => {
+    const sx = d.source.y, sy = d.source.x;
+    const tx = d.target.y, ty = d.target.x;
+    const mx = (sx + tx) / 2;
+    return `M${sx},${sy} C${mx},${sy} ${mx},${ty} ${tx},${ty}`;
+  };
+
+  const linkSel = gEl.selectAll('path.link')
+    .data(links, d => d.target.id);
+
+  // EXIT — crucial fix: animate links out to their source before removing
+  linkSel.exit()
+    .transition().duration(DURATION)
+    .attr('d', d => {
+      const o = { x: source.x, y: source.y };
+      return linkPath({ source: o, target: o });
+    })
+    .attr('stroke-opacity', 0)
+    .remove();
+
+  // ENTER
+  const linkEnter = linkSel.enter().insert('path', 'g')
+    .attr('class', 'link')
+    .attr('stroke', d => phaseColor(d.target))
+    .attr('stroke-width', d => {
+      const t = d.target.data.type;
+      return t === 'fase' ? 2 : t === 'actividad' ? 1.5 : 0.9;
+    })
+    .attr('stroke-opacity', 0)
+    .attr('d', () => {
+      const o = { x: source.x0 ?? source.x, y: source.y0 ?? source.y };
+      return linkPath({ source: o, target: o });
+    });
+
+  // UPDATE + ENTER transition
+  linkEnter.merge(linkSel)
+    .transition().duration(DURATION)
+    .attr('d', linkPath)
+    .attr('stroke-opacity', 0.35);
+
+  // ── NODES ──────────────────────────────────────────────────────────────────
+  const nodeSel = gEl.selectAll('g.node')
+    .data(nodes, d => d.id);
+
+  // EXIT — collapse toward parent
+  nodeSel.exit()
+    .transition().duration(DURATION)
+    .attr('transform', `translate(${source.y},${source.x})`)
+    .style('opacity', 0)
+    .remove();
+
+  // ENTER
+  const nodeEnter = nodeSel.enter().append('g')
+    .attr('class', d => `node node-${d.data.type}`)
+    .attr('transform', `translate(${source.y0 ?? source.y},${source.x0 ?? source.x})`)
+    .style('opacity', 0)
+    .on('click', (e, d) => {
+      if (d.data.type === 'tool') {
+        if (d.data.url) window.open('https://' + d.data.url.replace(/^https?:\/\//, ''), '_blank');
+      } else {
+        toggleNode(d);
+      }
+      e.stopPropagation();
+    })
+    .on('mouseover', showTip)
+    .on('mousemove', moveTip)
+    .on('mouseout', hideTip);
+
+  // ── ROOT node ──
+  const rootN = nodeEnter.filter(d => d.data.type === 'root');
+  rootN.append('rect')
+    .attr('x', -52).attr('y', -18)
+    .attr('width', 104).attr('height', 36)
+    .attr('rx', 8)
+    .attr('fill', '#161b22')
+    .attr('stroke', '#58a6ff')
+    .attr('stroke-width', 2);
+  rootN.append('text').attr('dy', '-0.2em').attr('text-anchor','middle')
+    .attr('fill','#58a6ff').attr('font-size','10px').attr('font-weight','700')
+    .text('Ransomware OSINT');
+  rootN.append('text').attr('dy', '1em').attr('text-anchor','middle')
+    .attr('fill','#8b949e').attr('font-size','9px')
+    .text('Framework');
+
+  // ── FASE node ──
+  const faseN = nodeEnter.filter(d => d.data.type === 'fase');
+  faseN.append('rect')
+    .attr('x', -46).attr('y', -14)
+    .attr('width', 92).attr('height', 28)
+    .attr('rx', 6)
+    .attr('fill', d => PHASE_BG[phaseIdx(d)] ?? '#161b22')
+    .attr('stroke', d => phaseColor(d))
+    .attr('stroke-width', 2);
+  faseN.append('text').attr('dy', '-0.15em').attr('text-anchor','middle')
+    .attr('fill', d => phaseColor(d))
+    .attr('font-size','10px').attr('font-weight','800')
+    .text(d => d.data.name);
+  faseN.append('text').attr('dy', '1em').attr('text-anchor','middle')
+    .attr('fill','#8b949e').attr('font-size','8.5px')
+    .text(d => d.data.label);
+
+  // ── ACTIVIDAD node ──
+  const actN = nodeEnter.filter(d => d.data.type === 'actividad');
+  actN.append('circle')
+    .attr('r', 6)
+    .attr('fill', d => phaseColor(d))
+    .attr('fill-opacity', 0.2)
+    .attr('stroke', d => phaseColor(d))
+    .attr('stroke-width', 1.8);
+  actN.append('text')
+    .attr('x', 11).attr('dy', '0.35em')
+    .attr('fill', d => phaseColor(d))
+    .attr('font-size','10.5px').attr('font-weight','600')
+    .text(d => d.data.name);
+
+  // ── TOOL node ── (triangle)
+  const toolN = nodeEnter.filter(d => d.data.type === 'tool');
+  toolN.append('polygon')
+    .attr('points', '0,-5.5 4.8,2.8 -4.8,2.8')
+    .attr('fill', d => phaseColor(d))
+    .attr('fill-opacity', 0.9)
+    .attr('stroke', d => phaseColor(d))
+    .attr('stroke-width', 0.5);
+  toolN.append('text')
+    .attr('x', 9).attr('dy', '0.35em')
+    .attr('fill', '#c9d1d9')
+    .attr('font-size', '9.5px')
+    .text(d => d.data.name);
+  // URL label on separate line below name
+  toolN.append('text')
+    .attr('x', 9).attr('dy', '1.5em')
+    .attr('fill', '#8b949e')
+    .attr('font-size', '8px')
+    .attr('font-family', 'monospace')
+    .text(d => d.data.url);
+
+  // UPDATE + ENTER transition
+  nodeEnter.merge(nodeSel)
+    .transition().duration(DURATION)
+    .attr('transform', d => `translate(${d.y},${d.x})`)
+    .style('opacity', 1);
+
+  // Save old positions for next transition
+  nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+}
+
+// ── TOGGLE ────────────────────────────────────────────────────────────────────
+function toggleNode(d) {
+  if (d.children) {
+    d._children = d.children;
+    d.children = null;
+  } else if (d._children) {
+    d.children = d._children;
+    d._children = null;
+  }
+  update(d);
+}
+
+// ── EXPAND / COLLAPSE ALL ─────────────────────────────────────────────────────
+function expandAll() {
+  root.each(d => {
+    if (d._children) { d.children = d._children; d._children = null; }
+  });
+  update(root);
+}
+
+function collapseAll() {
+  root.children.forEach(fase => {
+    if (fase.children) {
+      fase.children.forEach(act => collapse(act));
+    }
+    if (fase._children) {
+      fase._children.forEach(act => collapse(act));
+    }
+  });
+  update(root);
+}
+
+// ── FOCUS PHASE ──────────────────────────────────────────────────────────────
+function focusPhase(idx) {
+  focusedPhase = focusedPhase === idx ? null : idx;
+  // Highlight legend rows
+  document.querySelectorAll('.leg-row').forEach((r, i) => {
+    r.style.opacity = (focusedPhase === null || i === focusedPhase) ? '1' : '0.3';
+  });
+  update(root);
+}
+
+// ── CENTER ────────────────────────────────────────────────────────────────────
+function centerView() {
+  const W = window.innerWidth, H = window.innerHeight - 50;
+  svgEl.transition().duration(600).call(
+    zoomBeh.transform,
+    d3.zoomIdentity.translate(140, H / 2).scale(0.85)
+  );
+}
+
+function resetView() {
+  focusedPhase = null;
+  document.querySelectorAll('.leg-row').forEach(r => r.style.opacity = '1');
+  update(root);
+  centerView();
+}
+
+// ── TOOLTIP ───────────────────────────────────────────────────────────────────
+function showTip(event, d) {
+  if (d.data.type === 'root') return;
+  const tt = document.getElementById('tooltip');
+  let html = '';
+  if (d.data.type === 'fase') {
+    html = `<div class="tt-name">${d.data.name} · ${d.data.label}</div>
+            <div class="tt-hint">Clic para expandir / colapsar actividades</div>`;
+  } else if (d.data.type === 'actividad') {
+    const n = (d.children || d._children || []).length;
+    html = `<div class="tt-name">${d.data.name}</div>
+            <div class="tt-desc">${n} herramientas / fuentes</div>
+            <div class="tt-hint">Clic para expandir / colapsar</div>`;
+  } else {
+    html = `<div class="tt-name">${d.data.name}</div>
+            <div class="tt-url">${d.data.url}</div>
+            <div class="tt-desc">${d.data.desc}</div>
+            <div class="tt-hint">▶ Clic para abrir en nueva pestaña</div>`;
+  }
+  tt.innerHTML = html;
+  tt.style.display = 'block';
+  moveTip(event);
+}
+
+function moveTip(event) {
+  const tt = document.getElementById('tooltip');
+  const x = Math.min(event.clientX + 16, window.innerWidth - 320);
+  const y = Math.min(event.clientY - 8, window.innerHeight - 150);
+  tt.style.left = x + 'px';
+  tt.style.top  = y + 'px';
+}
+
+function hideTip() { document.getElementById('tooltip').style.display = 'none'; }
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+window.addEventListener('load', init);
+window.addEventListener('resize', () => {
+  d3.select('#svg').attr('width', window.innerWidth).attr('height', window.innerHeight - 50);
+});
+</script>
+</body>
+</html>
